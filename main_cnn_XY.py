@@ -12,8 +12,8 @@ import random
 from tensorflow.python.keras.layers import Dropout
 from _datetime import datetime
 
-X_data = np.loadtxt('new_train_features.csv',skiprows=1,delimiter=',')
-Y_data = np.loadtxt('new_train_target.csv',skiprows=1,delimiter=',')
+X_data = np.loadtxt('new_train_features_XY.csv',skiprows=1,delimiter=',')
+Y_data = np.loadtxt('new_train_target_XY.csv',skiprows=1,delimiter=',')
 X_predict = np.loadtxt('test_features.csv',skiprows=1,delimiter=',')
 
 def reshape(data, X_or_Y):
@@ -67,11 +67,6 @@ def train_test_split(X_data, Y_data):
 
     return X_train, X_test, Y_train, Y_test
 
-def my_loss(y_true, y_pred):
-    divResult = Lambda(lambda x: x[0]/x[1])([(y_pred-y_true),(y_true+0.000001)])
-
-    return K.mean(K.square(divResult))
-
 def my_loss_E1(y_true, y_pred):
     #weight = np.array([1,1])
     return K.mean(K.square(y_true-y_pred))/2e+04
@@ -94,7 +89,7 @@ def set_model():
     model.add(Conv2D(filters * 4, kernel_size, padding=padding, activation=activation))
     model.add(BatchNormalization())
     model.add(MaxPooling2D(pool_size=(2, 1)))
-    #model.add(Dropout(0.25))
+    model.add(Dropout(0.25))
 
     model.add(Conv2D(filters * 8, kernel_size, padding=padding, activation=activation))
     model.add(BatchNormalization())
@@ -107,11 +102,11 @@ def set_model():
     model.add(Conv2D(filters * 32, kernel_size, padding=padding, activation=activation))
     model.add(BatchNormalization())
     model.add(MaxPooling2D(pool_size=(2, 1)))
-    #model.add(Dropout(0.25))
+    model.add(Dropout(0.25))
 
     model.add(Flatten())
     model.add(Dense(128, activation='elu'))
-    #model.add(Dropout(0.5))
+    model.add(Dropout(0.5))
     model.add(Dense(64, activation='elu'))
     model.add(Dense(32, activation='elu'))
     model.add(Dense(16, activation='elu'))
@@ -125,11 +120,11 @@ def set_model():
 
     return model
 
-def train_save(model, X_train, X_test, Y_train, Y_test, train_time):
+def train_save(model, X_train, Y_train, train_time):
     MODEL_SAVE_FOLDER_PATH = './best_model/'
     if not os.path.exists(MODEL_SAVE_FOLDER_PATH):
         os.mkdir(MODEL_SAVE_FOLDER_PATH)
-    model_path = MODEL_SAVE_FOLDER_PATH + 'model_{}.hdf5'.format(train_time)
+    model_path = MODEL_SAVE_FOLDER_PATH + 'XY_{}.hdf5'.format(train_time)
 
     best_save = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss', mode='min')
 
@@ -208,11 +203,10 @@ def train_save(model, X_train, X_test, Y_train, Y_test, train_time):
     loss_ax.legend(loc='upper left')
     plt.show()
 
-    test_loss = model.evaluate(X_test, Y_test)
-    print('test_loss: ', test_loss)
+
 
 def load_best_model(train_time):
-    model = load_model('./best_model/model_{}.hdf5'.format(train_time), custom_objects={'my_loss_E1': my_loss_E1, })
+    model = load_model('./best_model/XY_{}.hdf5'.format(train_time), custom_objects={'my_loss_E1': my_loss_E1, })
     return model
 
 
@@ -283,16 +277,23 @@ plt.show()
 # set model and train
 model = set_model()
 train_time = datetime.now().strftime("%m_%d_%H:%M")
-train_save(model, X_train, X_test, Y_train, Y_test, train_time)  # train and save best model
+train_save(model, X_train, Y_train, train_time)  # train and save best model
 
 # load best model
 best_model = load_best_model(train_time)
 
-# predict the unknown data
+# evaluate test data loss
+test_loss = model.evaluate(X_test, Y_test)
+print('test_loss: ', test_loss)
+
+# predict the unknown data and make submit file
 X_predict = reshape(X_predict, 'X')
 Y_predict = best_model.predict(X_predict)
-
 submit.iloc[:, 1] = Y_predict[:, 0]
 submit.iloc[:, 2] = Y_predict[:, 1]
-submit.to_csv('result/submit.csv', index = False)
+submit.to_csv('result/submit_XY_{}_{}.csv'.format(test_loss, train_time), index = False)
+
+# save renamed best model
+best_model.save('./best_model/XY_{}_{}.hdf5'.format(test_loss, train_time))
+os.remove('./best_model/XY_{}.hdf5'.format(train_time))
 

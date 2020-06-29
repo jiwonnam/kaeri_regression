@@ -2,7 +2,7 @@ import pandas as pd
 
 # Sort the target data based on X and Y
 target = pd.read_csv('train_target.csv')
-target = target.sort_values(['X', 'Y', 'M', 'V'], ascending=[True, True, True, True])
+target = target.sort_values(['X', 'Y'], ascending=[True, True])
 print(target.shape)
 print(target)
 
@@ -25,7 +25,7 @@ for set in range(group_size):
 print('\n', new_target.shape)
 print(new_target)
 new_target['id'] = new_target['id'].astype(int)
-new_target.to_csv('new_train_target.csv', index=False)
+new_target.to_csv('new_train_target_XY.csv', index=False)
 
 
 # Transform the features data corresponding to the sequence of target data
@@ -42,4 +42,4 @@ for i, row in new_target.iterrows():
 
 print(new_features.shape)
 print(new_features)
-new_features.to_csv('new_train_features.csv', index=False)
+new_features.to_csv('new_train_features_XY.csv', index=False)
