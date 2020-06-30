@@ -192,9 +192,8 @@ print('test_loss: ', test_loss)
 X_predict = reshape(X_predict, 'X')
 Y_predict = best_model.predict(X_predict)
 submit.iloc[:, 4] = Y_predict[:, 0]
-submit.to_csv('result/submit_V_{}_{}.csv'.format(test_loss, train_time), index = False)
+submit.to_csv('result/submit_V_{:.5f}_{}.csv'.format(test_loss, train_time), index = False)
 
 # save renamed best model
-best_model.save('./best_model/V_{}_{}.hdf5'.format(test_loss, train_time))
+best_model.save('./best_model/V_{:.5f}_{}.hdf5'.format(test_loss, train_time))
 os.remove('./best_model/V_{}.hdf5'.format(train_time))
-
