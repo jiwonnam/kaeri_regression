@@ -11,18 +11,49 @@ import pandas as pd
 import random
 from tensorflow.python.keras.layers import Dropout
 from _datetime import datetime
+from scipy.fftpack import fft
 
-X_data = np.loadtxt('new_train_features_MV.csv',skiprows=1,delimiter=',')
+X_data = pd.read_csv('new_train_features_MV.csv')
 Y_data = np.loadtxt('new_train_target_MV.csv',skiprows=1,delimiter=',')
-X_predict = np.loadtxt('test_features.csv',skiprows=1,delimiter=',')
+X_predict = pd.read_csv('test_features.csv')
 
-def reshape(data, X_or_Y):
+def transform_fft(X_data):
+    sampling_frequency = 5
+    sampling_period = 1 / sampling_frequency
+    frequency_max = 20
+    frequency_size = 40
+    df = frequency_max / frequency_size
+
+    f = np.arange(0, frequency_size) * df
+
+    X_data_id = X_data.drop_duplicates(['id'])['id'].values
+    new_X_data = []
+    for id in X_data_id:
+        s1_fft = np.fft.fft(X_data[X_data.id == id]['S1'].values) * sampling_period
+        s2_fft = np.fft.fft(X_data[X_data.id == id]['S2'].values) * sampling_period
+        s3_fft = np.fft.fft(X_data[X_data.id == id]['S3'].values) * sampling_period
+        s4_fft = np.fft.fft(X_data[X_data.id == id]['S4'].values) * sampling_period
+        for row in range(int(frequency_size)):
+            new_X_data.append([np.abs(s1_fft[row]), np.abs(s2_fft[row]), np.abs(s3_fft[row]), np.abs(s4_fft[row])])
+
+    new_X_data = np.array(new_X_data)
+
+    # first id data plot test
+    print(new_X_data.shape)
+    print(new_X_data[0:int(frequency_size), 0].shape)
+    plt.plot(f[0:int(frequency_size)], new_X_data[0:int(frequency_size), 0])
+    plt.xlabel('frequency(Hz)')
+    plt.ylabel('abs(xf)')
+    plt.show()
+
+    return new_X_data, frequency_size
+
+def reshape(data, X_or_Y, frequency_size):
     if(X_or_Y == 'X'):
-        data = data[:, 1:]
-        data = data.reshape(int(len(data)/375),375,5,1)
+        data = data.reshape(int(len(data)/frequency_size),frequency_size,4,1)
         print('reshaped X: {}'.format(data.shape))
     elif(X_or_Y == 'Y'):
-        data = data[:, 3]
+        data = data[:, 4]
         print('reshaped Y: {}'.format(data.shape))
 
     return data
@@ -52,6 +83,7 @@ def augmentation(X_data, Y_data, fold):
 
 def train_test_split(X_data, Y_data):
     set_size = 35  # (25.0, 0.2) ... (175.0, 1.0)
+
     total_set_count = int(len(X_data)/set_size)
     test_set_count = int(total_set_count*0.1)
 
@@ -71,14 +103,14 @@ def my_loss_E2(y_true, y_pred):
     divResult = Lambda(lambda x: x[0]/x[1])([(y_pred-y_true),(y_true+0.000001)])
     return K.mean(K.square(divResult))
 
-def set_model():
+def set_model(frequency_size):
     padding = 'valid'
     activation = 'elu'
     model = Sequential()
     filters = 16
     kernel_size = (3, 1)
 
-    model.add(Conv2D(filters, kernel_size, padding=padding, activation=activation, input_shape=(375, 5, 1)))
+    model.add(Conv2D(filters, kernel_size, padding=padding, activation=activation, input_shape=(frequency_size, 4, 1)))
     model.add(BatchNormalization())
     model.add(MaxPooling2D(pool_size=(2, 1)))
 
@@ -89,24 +121,21 @@ def set_model():
     model.add(Conv2D(filters * 4, kernel_size, padding=padding, activation=activation))
     model.add(BatchNormalization())
     model.add(MaxPooling2D(pool_size=(2, 1)))
-    model.add(Dropout(0.25))
 
-    model.add(Conv2D(filters * 8, kernel_size, padding=padding, activation=activation))
-    model.add(BatchNormalization())
-    model.add(MaxPooling2D(pool_size=(2, 1)))
-
-    model.add(Conv2D(filters * 16, kernel_size, padding=padding, activation=activation))
-    model.add(BatchNormalization())
-    model.add(MaxPooling2D(pool_size=(2, 1)))
-
-    model.add(Conv2D(filters * 32, kernel_size, padding=padding, activation=activation))
-    model.add(BatchNormalization())
-    model.add(MaxPooling2D(pool_size=(2, 1)))
-    model.add(Dropout(0.25))
+    # model.add(Conv2D(filters * 8, kernel_size, padding=padding, activation=activation))
+    # model.add(BatchNormalization())
+    # model.add(MaxPooling2D(pool_size=(2, 1)))
+    #
+    # model.add(Conv2D(filters * 16, kernel_size, padding=padding, activation=activation))
+    # model.add(BatchNormalization())
+    # model.add(MaxPooling2D(pool_size=(2, 1)))
+    #
+    # model.add(Conv2D(filters * 32, kernel_size, padding=padding, activation=activation))
+    # model.add(BatchNormalization())
+    # model.add(MaxPooling2D(pool_size=(2, 1)))
 
     model.add(Flatten())
     model.add(Dense(128, activation='elu'))
-    model.add(Dropout(0.5))
     model.add(Dense(64, activation='elu'))
     model.add(Dense(32, activation='elu'))
     model.add(Dense(16, activation='elu'))
@@ -124,12 +153,12 @@ def train_save(model, X_train, Y_train, train_time):
     MODEL_SAVE_FOLDER_PATH = './best_model/'
     if not os.path.exists(MODEL_SAVE_FOLDER_PATH):
         os.mkdir(MODEL_SAVE_FOLDER_PATH)
-    model_path = MODEL_SAVE_FOLDER_PATH + 'M_{}.hdf5'.format(train_time)
+    model_path = MODEL_SAVE_FOLDER_PATH + 'V_{}.hdf5'.format(train_time)
 
     best_save = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss', mode='min')
 
     history = model.fit(X_train, Y_train,
-                        epochs=100,
+                        epochs=200,
                         batch_size=70,
                         validation_split=0.2,
                         verbose=2,
@@ -145,39 +174,41 @@ def train_save(model, X_train, Y_train, train_time):
 
 
 def load_best_model(train_time):
-    model = load_model('./best_model/M_{}.hdf5'.format(train_time), custom_objects={'my_loss_E2': my_loss_E2, })
+    model = load_model('./best_model/V_{}.hdf5'.format(train_time), custom_objects={'my_loss_E2': my_loss_E2, })
     return model
 
+# transform X_data based on frequency
+X_data, frequency_size = transform_fft(X_data)
 
 # prepare data
 submit = pd.read_csv('sample_submission.csv')
-X_data = reshape(X_data, 'X')
-Y_data = reshape(Y_data, 'Y')
+X_data = reshape(X_data, 'X', frequency_size)
+Y_data = reshape(Y_data, 'Y', frequency_size)
 
 # augment data and authenticate
-fold = 1
-original_data_count = len(X_data)
-data_testID = random.randint(0,original_data_count-1)
-
-X_data, Y_data = augmentation(X_data, Y_data, fold)
-print('Original M: {}'.format(Y_data[data_testID]))
-print('Modified M: {}'.format(Y_data[data_testID+2800*(fold-1)]))
-
-for features in range(1,5):
-    for sequence in range(375):
-        if X_data[data_testID][sequence][features][0] != 0:
-            print('Original sensor {} initial time: {}'.format(features, sequence))
-            break
-    for sequence in range(375):
-        if X_data[data_testID+2800*(fold-1)][sequence][features][0] != 0:
-            print('Modified sensor {} initial time: {}'.format(features, sequence))
-            break
+# fold = 1
+# original_data_count = len(X_data)
+# data_testID = random.randint(0,original_data_count-1)
+#
+# X_data, Y_data = augmentation(X_data, Y_data, fold)
+# print('Original M: {}'.format(Y_data[data_testID]))
+# print('Modified M: {}'.format(Y_data[data_testID+2800*(fold-1)]))
+#
+# for features in range(1,5):
+#     for sequence in range(375):
+#         if X_data[data_testID][sequence][features][0] != 0:
+#             print('Original sensor {} initial time: {}'.format(features, sequence))
+#             break
+#     for sequence in range(375):
+#         if X_data[data_testID+2800*(fold-1)][sequence][features][0] != 0:
+#             print('Modified sensor {} initial time: {}'.format(features, sequence))
+#             break
 
 # split train/test data and check
 X_train, X_test, Y_train, Y_test = train_test_split(X_data, Y_data)
 
 # set model and train
-model = set_model()
+model = set_model(frequency_size)
 train_time = datetime.now().strftime("%m_%d_%H:%M")
 train_save(model, X_train, Y_train, train_time)  # train and save best model
 
@@ -189,12 +220,13 @@ test_loss = model.evaluate(X_test, Y_test)
 print('test_loss: ', test_loss)
 
 # predict the unknown data and make submit file
-X_predict = reshape(X_predict, 'X')
+X_predict, frequency_size = transform_fft(X_predict)
+X_predict = reshape(X_predict, 'X', frequency_size)
 Y_predict = best_model.predict(X_predict)
-submit.iloc[:, 3] = Y_predict[:, 0]
-submit.to_csv('result/submit_M_{}_{}.csv'.format(test_loss, train_time), index = False)
+submit.iloc[:, 4] = Y_predict[:, 0]
+submit.to_csv('result/submit_V_{:.5f}_{}.csv'.format(test_loss, train_time), index = False)
 
 # save renamed best model
-best_model.save('./best_model/M_{}_{}.hdf5'.format(test_loss, train_time))
-os.remove('./best_model/M_{}.hdf5'.format(train_time))
+best_model.save('./best_model/V_{:.5f}_{}.hdf5'.format(test_loss, train_time))
+os.remove('./best_model/V_{}.hdf5'.format(train_time))
 
