@@ -120,27 +120,70 @@ def set_model():
 
     return model
 
-def train_save(model, X_train, Y_train, train_time):
+def train_save(model, X_data, Y_data, train_time):
     MODEL_SAVE_FOLDER_PATH = './best_model/'
     if not os.path.exists(MODEL_SAVE_FOLDER_PATH):
         os.mkdir(MODEL_SAVE_FOLDER_PATH)
     model_path = MODEL_SAVE_FOLDER_PATH + 'M_{}.hdf5'.format(train_time)
 
-    best_save = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss', mode='min')
+    # best_save = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss', mode='min')
 
-    history = model.fit(X_train, Y_train,
-                        epochs=100,
-                        batch_size=70,
-                        validation_split=0.2,
-                        verbose=2,
-                        callbacks=[best_save])
+    set_size = 35
+    total_set_count = int(len(X_data) / set_size)  # 80
+    k = 5
+    val_set_count = int(total_set_count / k)  # 16
+
+    # X = X.reshape(total_set_count, set_size, 375, 5, 1)
+    # Y = Y.reshape(total_set_count, set_size, 1)
+    # print('X training set: {}'.format(X.shape))
+    # print('Y training set: {}'.format(Y.shape))
+
+    loss = list()
+    val_loss = list()
+    for fold in range(k):  # 0~15, 16~31
+        X_val = X_data[fold * val_set_count * set_size: (fold + 1) * val_set_count * set_size]
+        X_train = np.concatenate((X_data[:fold * val_set_count * set_size], X_data[(fold + 1) * val_set_count * set_size:]), axis=0)
+        Y_val = Y_data[fold * val_set_count * set_size: (fold + 1) * val_set_count * set_size]
+        Y_train = np.concatenate((Y_data[:fold * val_set_count * set_size], Y_data[(fold + 1) * val_set_count * set_size:]), axis=0)
+
+        print('{}_fold'.format(fold))
+        history = model.fit(X_train, Y_train,
+                            epochs=int(100/k),
+                            batch_size=70,
+                            validation_data=(X_val, Y_val),
+                            verbose=2)
+        loss.append(history.history['loss'][-1])
+        val_loss.append(history.history['val_loss'][-1])
+
+
     fig, loss_ax = plt.subplots()
-    loss_ax.plot(history.history['loss'], 'y', label='train loss')
-    loss_ax.plot(history.history['val_loss'], 'r', label='val loss')
-    loss_ax.set_xlabel('epoch')
+    loss_ax.plot(loss, 'y', label='train loss')
+    loss_ax.plot(val_loss, 'r', label='val loss')
+    loss_ax.set_xlabel('fold')
     loss_ax.set_ylabel('loss')
     loss_ax.legend(loc='upper left')
     plt.show()
+
+    print('model :{}'.format(model_path))
+    print('val_loss : {}'.format(val_loss))
+    print('avg_val_loss : {}'.format(sum(val_loss) / len(val_loss)))
+
+    model.save(model_path)
+
+    # history = model.fit(X_train, Y_train,
+    #                     epochs=100,
+    #                     batch_size=70,
+    #                     validation_split=0.2,
+    #                     verbose=2,
+    #                     callbacks=[best_save])
+    # fig, loss_ax = plt.subplots()
+    # loss_ax.plot(history.history['loss'], 'y', label='train loss')
+    # loss_ax.plot(history.history['val_loss'], 'r', label='val loss')
+    # loss_ax.set_xlabel('epoch')
+    # loss_ax.set_ylabel('loss')
+    # loss_ax.legend(loc='upper left')
+    # plt.show()
+    return model
 
 
 
@@ -155,45 +198,46 @@ X_data = reshape(X_data, 'X')
 Y_data = reshape(Y_data, 'Y')
 
 # augment data and authenticate
-fold = 1
-original_data_count = len(X_data)
-data_testID = random.randint(0,original_data_count-1)
+# fold = 1
+# original_data_count = len(X_data)
+# data_testID = random.randint(0,original_data_count-1)
+#
+# X_data, Y_data = augmentation(X_data, Y_data, fold)
+# print('Original M: {}'.format(Y_data[data_testID]))
+# print('Modified M: {}'.format(Y_data[data_testID+2800*(fold-1)]))
 
-X_data, Y_data = augmentation(X_data, Y_data, fold)
-print('Original M: {}'.format(Y_data[data_testID]))
-print('Modified M: {}'.format(Y_data[data_testID+2800*(fold-1)]))
-
-for features in range(1,5):
-    for sequence in range(375):
-        if X_data[data_testID][sequence][features][0] != 0:
-            print('Original sensor {} initial time: {}'.format(features, sequence))
-            break
-    for sequence in range(375):
-        if X_data[data_testID+2800*(fold-1)][sequence][features][0] != 0:
-            print('Modified sensor {} initial time: {}'.format(features, sequence))
-            break
+# for features in range(1,5):
+#     for sequence in range(375):
+#         if X_data[data_testID][sequence][features][0] != 0:
+#             print('Original sensor {} initial time: {}'.format(features, sequence))
+#             break
+#     for sequence in range(375):
+#         if X_data[data_testID+2800*(fold-1)][sequence][features][0] != 0:
+#             print('Modified sensor {} initial time: {}'.format(features, sequence))
+#             break
 
 # split train/test data and check
-X_train, X_test, Y_train, Y_test = train_test_split(X_data, Y_data)
+# X_train, X_test, Y_train, Y_test = train_test_split(X_data, Y_data)
 
 # set model and train
 model = set_model()
 train_time = datetime.now().strftime("%m_%d_%H:%M")
-train_save(model, X_train, Y_train, train_time)  # train and save best model
+best_model = train_save(model, X_data, Y_data, train_time)  # train and save best model
 
 # load best model
-best_model = load_best_model(train_time)
+# best_model = load_best_model(train_time)
 
 # evaluate test data loss
-test_loss = model.evaluate(X_test, Y_test)
-print('test_loss: ', test_loss)
+# test_loss = model.evaluate(X_test, Y_test)
+# print('test_loss: ', test_loss)
 
 # predict the unknown data and make submit file
 X_predict = reshape(X_predict, 'X')
 Y_predict = best_model.predict(X_predict)
 submit.iloc[:, 3] = Y_predict[:, 0]
-submit.to_csv('result/submit_M_{:.5f}_{}.csv'.format(test_loss, train_time), index = False)
+submit.to_csv('result/submit_M_{}.csv'.format(train_time), index = False)
+# submit.to_csv('result/submit_M_{:.5f}_{}.csv'.format(test_loss, train_time), index = False)
 
 # save renamed best model
-best_model.save('./best_model/M_{:.5f}_{}.hdf5'.format(test_loss, train_time))
-os.remove('./best_model/M_{}.hdf5'.format(train_time))
+# best_model.save('./best_model/M_{:.5f}_{}.hdf5'.format(test_loss, train_time))
+# os.remove('./best_model/M_{}.hdf5'.format(train_time))

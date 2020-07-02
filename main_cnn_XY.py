@@ -120,16 +120,21 @@ def set_model():
 
     return model
 
-def train_save(model, X_train, Y_train, train_time):
+def train_save(model, X_data, Y_data, train_time):
     MODEL_SAVE_FOLDER_PATH = './best_model/'
     if not os.path.exists(MODEL_SAVE_FOLDER_PATH):
         os.mkdir(MODEL_SAVE_FOLDER_PATH)
     model_path = MODEL_SAVE_FOLDER_PATH + 'XY_{}.hdf5'.format(train_time)
 
-    best_save = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss', mode='min')
+    # best_save = ModelCheckpoint(model_path, save_best_only=True, monitor='val_loss', mode='min')
+
+    set_size = 80
+    total_set_count = int(len(X_data) / set_size)  # 35 -> augment: 105
+    k = 5
+    val_set_count = int(total_set_count / k)
 
     # set_size = 80
-    # total_set_count = int(len(X)/set_size)9.6087e-04
+    # total_set_count = int(len(X)/set_size)
     # val_set_count = int(total_set_count*0.2)
     # epochs_size = 100
     #
@@ -138,72 +143,52 @@ def train_save(model, X_train, Y_train, train_time):
     # print('X training set: {}'.format(X.shape))
     # print('Y training set: {}'.format(Y.shape))
 
-    # loss = list()
-    # val_loss = list()
-    #for epochs in range(epochs_size):
-        # X_val = list()
-        # X_train = list()
-        # Y_val = list()
-        # Y_train = list()
-        #
-        # set_num = list(range(total_set_count))
-        # random.shuffle(set_num)
-        # for index, value in enumerate(set_num):
-        #     if(index < val_set_count):
-        #         X_val.append(X[value])
-        #         Y_val.append(Y[value])
-        #     else:
-        #         X_train.append(X[value])
-        #         Y_train.append(Y[value])
-        #
-        # X_val = np.array(X_val)
-        # X_train = np.array(X_train)
-        # Y_val = np.array(Y_val)
-        # Y_train = np.array(Y_train)
-        #
-        # X_val = X_val.reshape(len(X_val) * set_size, 375, 5, 1)
-        # X_train = X_train.reshape(len(X_train) * set_size, 375, 5, 1)
-        # Y_val = Y_val.reshape(len(Y_val) * set_size, 2)
-        # Y_train = Y_train.reshape(len(Y_train) * set_size, 2)
-        #
-        # print('X_train_shape: {}'.format(X_train.shape))
-        # print('X_val_shape: {}'.format(X_val.shape))
-        # print('Y_train_shape: {}'.format(Y_train.shape))
-        # print('Y_val_shape: {}'.format(Y_val.shape))
-        #
-        # print('epoch: {}'.format(epochs))
-        # history = model.fit(X_train, Y_train,
-        #                     epochs=100,
-        #                     batch_size=80,
-        #                     validation_data=(X_val, Y_val),
-        #                     verbose=2,
-        #                     callbacks=[best_save])
-        # loss.extend(history.history['loss'])
-        # val_loss.extend(history.history['val_loss'])
+    loss = list()
+    val_loss = list()
+    for fold in range(k):
+        X_val = X_data[fold * val_set_count * set_size: (fold + 1) * val_set_count * set_size]
+        X_train = np.concatenate((X_data[:fold * val_set_count * set_size], X_data[(fold + 1) * val_set_count * set_size:]), axis=0)
+        Y_val = Y_data[fold * val_set_count * set_size: (fold + 1) * val_set_count * set_size]
+        Y_train = np.concatenate((Y_data[:fold * val_set_count * set_size], Y_data[(fold + 1) * val_set_count * set_size:]), axis=0)
 
-    # fig, loss_ax = plt.subplots()
-    # loss_ax.plot(loss, 'y', label='train loss')
-    # loss_ax.plot(val_loss, 'r', label='val loss')
-    # loss_ax.set_xlabel('epoch')
-    # loss_ax.set_ylabel('loss')
-    # loss_ax.legend(loc='upper left')
-    # plt.show()
+        print('{}_fold'.format(fold))
+        history = model.fit(X_train, Y_train,
+                            epochs=int(100/k),
+                            batch_size=80,
+                            validation_data=(X_val, Y_val),
+                            verbose=2)
+        loss.append(history.history['loss'][-1])
+        val_loss.append(history.history['val_loss'][-1])
 
-    history = model.fit(X_train, Y_train,
-                        epochs=100,
-                        batch_size=80,
-                        validation_split=0.2,
-                        verbose=2,
-                        callbacks=[best_save])
+
     fig, loss_ax = plt.subplots()
-    loss_ax.plot(history.history['loss'], 'y', label='train loss')
-    loss_ax.plot(history.history['val_loss'], 'r', label='val loss')
-    loss_ax.set_xlabel('epoch')
+    loss_ax.plot(loss, 'y', label='train loss')
+    loss_ax.plot(val_loss, 'r', label='val loss')
+    loss_ax.set_xlabel('fold')
     loss_ax.set_ylabel('loss')
     loss_ax.legend(loc='upper left')
     plt.show()
 
+    print('model :{}'.format(model_path))
+    print('val_loss : {}'.format(val_loss))
+    print('avg_val_loss : {}'.format(sum(val_loss) / len(val_loss)))
 
+    model.save(model_path)
+
+    # history = model.fit(X_train, Y_train,
+    #                     epochs=100,
+    #                     batch_size=80,
+    #                     validation_split=0.2,
+    #                     verbose=2,
+    #                     callbacks=[best_save])
+    # fig, loss_ax = plt.subplots()
+    # loss_ax.plot(history.history['loss'], 'y', label='train loss')
+    # loss_ax.plot(history.history['val_loss'], 'r', label='val loss')
+    # loss_ax.set_xlabel('epoch')
+    # loss_ax.set_ylabel('loss')
+    # loss_ax.legend(loc='upper left')
+    # plt.show()
+    return model
 
 def load_best_model(train_time):
     model = load_model('./best_model/XY_{}.hdf5'.format(train_time), custom_objects={'my_loss_E1': my_loss_E1, })
@@ -253,47 +238,48 @@ for features in range(1,5):
 # plt.show()
 
 # split train/test data and check
-X_train, X_test, Y_train, Y_test = train_test_split(X_data, Y_data)
-pos_X = list()
-pos_Y = list()
-for position in Y_train:
-    pos_X.append(position[0])
-    pos_Y.append(position[1])
-plt.figure()
-plt.title('Train distribution')
-plt.scatter(pos_X, pos_Y, alpha=.1)
-plt.show()
-
-pos_X = list()
-pos_Y = list()
-for position in Y_test:
-    pos_X.append(position[0])
-    pos_Y.append(position[1])
-plt.figure()
-plt.title('Test distribution')
-plt.scatter(pos_X, pos_Y, alpha=.1)
-plt.show()
+# X_train, X_test, Y_train, Y_test = train_test_split(X_data, Y_data)
+# pos_X = list()
+# pos_Y = list()
+# for position in Y_train:
+#     pos_X.append(position[0])
+#     pos_Y.append(position[1])
+# plt.figure()
+# plt.title('Train distribution')
+# plt.scatter(pos_X, pos_Y, alpha=.1)
+# plt.show()
+#
+# pos_X = list()
+# pos_Y = list()
+# for position in Y_test:
+#     pos_X.append(position[0])
+#     pos_Y.append(position[1])
+# plt.figure()
+# plt.title('Test distribution')
+# plt.scatter(pos_X, pos_Y, alpha=.1)
+# plt.show()
 
 # set model and train
 model = set_model()
 train_time = datetime.now().strftime("%m_%d_%H:%M")
-train_save(model, X_train, Y_train, train_time)  # train and save best model
+best_model = train_save(model, X_data, Y_data, train_time)  # train and save best model
 
 # load best model
-best_model = load_best_model(train_time)
+# best_model = load_best_model(train_time)
 
 # evaluate test data loss
-test_loss = model.evaluate(X_test, Y_test)
-print('test_loss: ', test_loss)
+# test_loss = model.evaluate(X_test, Y_test)
+# print('test_loss: ', test_loss)
 
 # predict the unknown data and make submit file
 X_predict = reshape(X_predict, 'X')
 Y_predict = best_model.predict(X_predict)
 submit.iloc[:, 1] = Y_predict[:, 0]
 submit.iloc[:, 2] = Y_predict[:, 1]
-submit.to_csv('result/submit_XY_{:.5f}_{}.csv'.format(test_loss, train_time), index = False)
+submit.to_csv('result/submit_XY_{}.csv'.format(train_time), index = False)
+# submit.to_csv('result/submit_XY_{:.5f}_{}.csv'.format(test_loss, train_time), index = False)
 
 # save renamed best model
-best_model.save('./best_model/XY_{:.5f}_{}.hdf5'.format(test_loss, train_time))
-os.remove('./best_model/XY_{}.hdf5'.format(train_time))
+# best_model.save('./best_model/XY_{:.5f}_{}.hdf5'.format(test_loss, train_time))
+# os.remove('./best_model/XY_{}.hdf5'.format(train_time))
 
