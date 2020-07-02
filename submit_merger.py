@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def merge_submit(xy_submit, m_submit, v_submit, merged_output):
+def merge_xy_m_v_submits(xy_submit, m_submit, v_submit, merged_output):
     merged = pd.read_csv('sample_submission.csv')
 
     xy = pd.read_csv(xy_submit)
@@ -18,10 +18,15 @@ def merge_submit(xy_submit, m_submit, v_submit, merged_output):
     merged.to_csv(merged_output, index=False)
 
 
+def ensemble_submits(outfile, *files):
+    weight = 1.0/(len(files))  # Equal weight
+    result = pd.read_csv("sample_submission.csv")
+    for file in files:
+        r = pd.read_csv(file)
+        result.iloc[:, 1:] += weight * r.iloc[:, 1:]
+
+    result.to_csv(outfile, index=False)
+
+
 if __name__ == "__main__":
     pass
-    # test_xy = "result/submit_xy.csv"
-    # test_m = "result/submit_m.csv"
-    # test_v = "result/submit_v.csv"
-    # merged_output = "result/test_merged.csv"
-    # merge_submit(test_xy, test_m, test_v, merged_output)
